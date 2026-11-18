@@ -13,12 +13,135 @@ from typing import Any, Dict, List
 from support import (MODEL, SYSTEM_PROMPT, call_local, execute_tool, mcp_client,
                      new_session, next_available_day, record_tool_result,
                      runtime_preamble)
+from support.mock_backend import DATA_DIR, load_policy
 
 MAX_TOOL_CALLS = 8  # Larkspur's own build capped the loop here; then a human takes over.
 
 TONE_ADDENDUM = ""                       # ✏️ Build 4, step 4.1, intelligence goal
-EXTRA_TOOLS: List[Dict[str, Any]] = []   # ✏️ Build 2, step 2.1: schemas for the tools you add
-LOCAL_TOOLS: Dict[str, Any] = {}         # ✏️ Build 2, step 2.1: the functions behind them
+
+
+def care_entitlements(policy_row_id: str) -> Dict[str, Any]:
+    """Care while the customer waits (meal, hotel, ground), straight from
+    disruption_policy.json and Handbook section 6. Nothing is invented: an
+    unknown row id or a missing handbook section comes back as an error."""
+    policy = load_policy()
+    row = next((r for r in policy["rows"] if r["policy_row_id"] == policy_row_id), None)
+    if row is None:
+        return {"error": f"No policy row '{policy_row_id}'. Use the policy_row_id "
+                         "returned by check_policy.",
+                "valid_policy_row_ids": [r["policy_row_id"] for r in policy["rows"]]}
+    handbook = (DATA_DIR / "fare_rules_excerpt.md").read_text(encoding="utf-8")
+    start = handbook.find("### 6.")
+    end = handbook.find("### 7.")
+    if start == -1:
+        return {"error": "Handbook section 6 (care while you wait) was not found."}
+    return {
+        "policy_row_id": policy_row_id,
+        "policy_version": policy["version"],
+        "care": row["care"],
+        "loyalty_meal_bonus_usd": {t: v.get("meal_bonus_usd", 0)
+                                   for t, v in policy["loyalty_rules"].items()},
+        "auto_approval": {k: policy["auto_approval"][k] for k in ("meal", "ground", "hotel")},
+        "handbook_section_6": handbook[start:end if end != -1 else None].strip(),
+    }
+
+
+_HANDBOOK_SECTIONS = {
+    "fare_families": "### 4.",
+    "disruption_rules": "### 5.",
+    "care": "### 6.",
+    "chat_limits": "### 7.",
+}
+
+
+def fare_rules(topic: str) -> Dict[str, Any]:
+    """Handbook v14.3 text, verbatim, for one topic. Unknown topic or a missing
+    section comes back as an error, never as made-up policy."""
+    marker = _HANDBOOK_SECTIONS.get(topic)
+    if marker is None:
+        return {"error": f"Unknown topic '{topic}'.", "valid_topics": list(_HANDBOOK_SECTIONS)}
+    handbook = (DATA_DIR / "fare_rules_excerpt.md").read_text(encoding="utf-8")
+    start = handbook.find(marker)
+    if start == -1:
+        return {"error": f"Handbook section for '{topic}' was not found."}
+    nxt = handbook.find("\n### ", start + 1)
+    return {"topic": topic, "source": "Handbook v14.3 (fare_rules_excerpt.md)",
+            "text": handbook[start:nxt if nxt != -1 else None].strip()}
+
+
+EXTRA_TOOLS: List[Dict[str, Any]] = [   # ✏️ Build 2, step 2.1: schemas for the tools you add
+    {
+        "name": "next_available_day",
+        "description": (
+            "Find the earliest date with an open seat on a route, starting from a given "
+            "date. Use it when the customer asks 'when is the first day I can fly?' or "
+            "when no option returned by search_alternatives works for them. It answers "
+            "for ONE passenger only and does not check party size, so for a group say "
+            "seats for everyone are not confirmed. Offer only the date it returns; never "
+            "guess a date or a seat."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "origin": {"type": "string", "description": "Origin airport code, e.g. DEN."},
+                "dest": {"type": "string", "description": "Destination airport code, e.g. AUS."},
+                "date": {"type": "string", "description": "Start date in ISO format YYYY-MM-DD, e.g. 2025-05-08."},
+                "cabin": {"type": "string", "enum": ["Y", "J"], "description": "Cabin: Y (Main) or J (First). Defaults to Y."},
+            },
+            "required": ["origin", "dest", "date"],
+        },
+    },
+    {
+        "name": "fare_rules",
+        "description": (
+            "Read Larkspur's Handbook wording on a topic, to explain WHY a rule applies: "
+            "'fare_families' (Basic, Main, Main Plus, First: changes and refunds), "
+            "'disruption_rules' (free rebooking windows, refunds, diversions), 'care' "
+            "(meal, hotel and ground credits, goodwill) or 'chat_limits' (what the chat "
+            "agent will not do). Use it for questions like 'why do I not get a hotel?' or "
+            "'can I change a Basic ticket?'. check_policy decides what THIS customer "
+            "gets; this tool only quotes the rule text. Quote it faithfully and do not "
+            "add rules that are not in it."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "topic": {
+                    "type": "string",
+                    "enum": ["fare_families", "disruption_rules", "care", "chat_limits"],
+                    "description": "Which Handbook topic to read.",
+                },
+            },
+            "required": ["topic"],
+        },
+    },
+    {
+        "name": "care_entitlements",
+        "description": (
+            "Explain what Larkspur provides while the customer waits: meal credit, hotel, "
+            "and ground transport, with the amounts, the wait-time thresholds, and the "
+            "Handbook wording behind them. Use it when the customer asks about care, for "
+            "example 'do I get a meal or a hotel while I wait?' or 'why no hotel?'. Call "
+            "check_policy first: this tool does not decide the disruption's outcome, it "
+            "only reads the care rules for the row check_policy returned. Quote only "
+            "amounts and thresholds returned here; if the tool returns an error, say you "
+            "cannot confirm it and offer a human agent."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "policy_row_id": {
+                    "type": "string",
+                    "description": "The policy_row_id that check_policy returned, e.g. UNC-CXL or CTL-B3.",
+                },
+            },
+            "required": ["policy_row_id"],
+        },
+    },
+]
+LOCAL_TOOLS: Dict[str, Any] = {"next_available_day": next_available_day,
+                               "fare_rules": fare_rules,
+                               "care_entitlements": care_entitlements}   # ✏️ Build 2, step 2.1: the functions behind them
 
 
 def text_of(response) -> str:
