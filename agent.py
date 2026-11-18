@@ -46,75 +46,7 @@ def care_entitlements(policy_row_id: str) -> Dict[str, Any]:
     }
 
 
-_HANDBOOK_SECTIONS = {
-    "fare_families": "### 4.",
-    "disruption_rules": "### 5.",
-    "care": "### 6.",
-    "chat_limits": "### 7.",
-}
-
-
-def fare_rules(topic: str) -> Dict[str, Any]:
-    """Handbook v14.3 text, verbatim, for one topic. Unknown topic or a missing
-    section comes back as an error, never as made-up policy."""
-    marker = _HANDBOOK_SECTIONS.get(topic)
-    if marker is None:
-        return {"error": f"Unknown topic '{topic}'.", "valid_topics": list(_HANDBOOK_SECTIONS)}
-    handbook = (DATA_DIR / "fare_rules_excerpt.md").read_text(encoding="utf-8")
-    start = handbook.find(marker)
-    if start == -1:
-        return {"error": f"Handbook section for '{topic}' was not found."}
-    nxt = handbook.find("\n### ", start + 1)
-    return {"topic": topic, "source": "Handbook v14.3 (fare_rules_excerpt.md)",
-            "text": handbook[start:nxt if nxt != -1 else None].strip()}
-
-
 EXTRA_TOOLS: List[Dict[str, Any]] = [   # ✏️ Build 2, step 2.1: schemas for the tools you add
-    {
-        "name": "next_available_day",
-        "description": (
-            "Find the earliest date with an open seat on a route, starting from a given "
-            "date. Use it when the customer asks 'when is the first day I can fly?' or "
-            "when no option returned by search_alternatives works for them. It answers "
-            "for ONE passenger only and does not check party size, so for a group say "
-            "seats for everyone are not confirmed. Offer only the date it returns; never "
-            "guess a date or a seat."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "origin": {"type": "string", "description": "Origin airport code, e.g. DEN."},
-                "dest": {"type": "string", "description": "Destination airport code, e.g. AUS."},
-                "date": {"type": "string", "description": "Start date in ISO format YYYY-MM-DD, e.g. 2025-05-08."},
-                "cabin": {"type": "string", "enum": ["Y", "J"], "description": "Cabin: Y (Main) or J (First). Defaults to Y."},
-            },
-            "required": ["origin", "dest", "date"],
-        },
-    },
-    {
-        "name": "fare_rules",
-        "description": (
-            "Read Larkspur's Handbook wording on a topic, to explain WHY a rule applies: "
-            "'fare_families' (Basic, Main, Main Plus, First: changes and refunds), "
-            "'disruption_rules' (free rebooking windows, refunds, diversions), 'care' "
-            "(meal, hotel and ground credits, goodwill) or 'chat_limits' (what the chat "
-            "agent will not do). Use it for questions like 'why do I not get a hotel?' or "
-            "'can I change a Basic ticket?'. check_policy decides what THIS customer "
-            "gets; this tool only quotes the rule text. Quote it faithfully and do not "
-            "add rules that are not in it."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "topic": {
-                    "type": "string",
-                    "enum": ["fare_families", "disruption_rules", "care", "chat_limits"],
-                    "description": "Which Handbook topic to read.",
-                },
-            },
-            "required": ["topic"],
-        },
-    },
     {
         "name": "care_entitlements",
         "description": (
@@ -139,9 +71,7 @@ EXTRA_TOOLS: List[Dict[str, Any]] = [   # ✏️ Build 2, step 2.1: schemas for 
         },
     },
 ]
-LOCAL_TOOLS: Dict[str, Any] = {"next_available_day": next_available_day,
-                               "fare_rules": fare_rules,
-                               "care_entitlements": care_entitlements}   # ✏️ Build 2, step 2.1: the functions behind them
+LOCAL_TOOLS: Dict[str, Any] = {"care_entitlements": care_entitlements}   # ✏️ Build 2, step 2.1: the functions behind them
 
 
 def text_of(response) -> str:
@@ -206,7 +136,7 @@ def run_agent(pnr: str, last_name: str, message: str) -> str:            # ✏�
 def tool_list() -> List[Dict[str, Any]]:                   # ✏️ Build 2, step 2.2
     """Given. Exactly what Claude is offered on every turn; run.py --show-tools
     prints this list."""
-    return build_tools() + EXTRA_TOOLS
+    return build_tools() + EXTRA_TOOLS + mcp_client.tools()
 
 
 # ──────────────────────────────────────────────────────────────────────────────
