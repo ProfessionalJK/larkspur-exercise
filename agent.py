@@ -17,7 +17,19 @@ from support.mock_backend import DATA_DIR, load_policy
 
 MAX_TOOL_CALLS = 8  # Larkspur's own build capped the loop here; then a human takes over.
 
-TONE_ADDENDUM = ""                       # ✏️ Build 4, step 4.1, intelligence goal
+TONE_ADDENDUM = (                        # ✏️ Build 4, step 4.1, intelligence goal
+    "\n\nTONE AND ESCALATION. If the customer is abusive, hostile or threatens legal "
+    "action (a lawyer, a lawsuit, a regulator), do not carry on as if nothing was said. "
+    "Acknowledge the complaint once, in one calm sentence, without arguing or grovelling. "
+    "Call escalate_to_human in that same turn, with the customer's words and what you "
+    "know about the booking in summary_for_human, and tell them a person will take it "
+    "from here. Promise nothing: no refund, credit, voucher, compensation or outcome, "
+    "do not offer a refund pathway, and do not give an entitlements rundown. Do not "
+    "rebook or issue anything on that turn.\n\n"
+    "GROUNDING. When you say no to a request, give only the reason the policy row itself "
+    "returns (its row id and band). Never invent a threshold, a rule or a rationale that "
+    "the row does not state."
+)
 
 
 def care_entitlements(policy_row_id: str) -> Dict[str, Any]:
@@ -183,7 +195,13 @@ def build_tools() -> List[Dict[str, Any]]:                 # ✏️ Build 1, ste
                 "Find nonstop Larkspur flights the customer can be rebooked onto after their "
                 "disrupted segment, for the PNR's own route and cabin, with fare difference, "
                 "seats left and an option_id for each. Use this after lookup_booking and "
-                "check_policy when the customer needs a new flight. Only offer options "
+                "check_policy when the customer needs a new flight, and also whenever the "
+                "disrupted segment was cancelled by Larkspur, even if the customer only asks "
+                "to cancel or for a refund: search so you can list the alternatives next to "
+                "the refund option, and do not just offer to look later. Searching never "
+                "replaces the handoff: a cancel or refund request still goes to "
+                "escalate_to_human in the same turn, and you list every option returned. "
+                "Only offer options "
                 "returned here; never invent a flight, time or seat. Pass an option_id to "
                 "hold_seat once the customer picks one."
             ),
