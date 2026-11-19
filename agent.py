@@ -25,10 +25,7 @@ TONE_ADDENDUM = (                        # ✏️ Build 4, step 4.1, intelligenc
     "know about the booking in summary_for_human, and tell them a person will take it "
     "from here. Promise nothing: no refund, credit, voucher, compensation or outcome, "
     "do not offer a refund pathway, and do not give an entitlements rundown. Do not "
-    "rebook or issue anything on that turn.\n\n"
-    "GROUNDING. When you say no to a request, give only the reason the policy row itself "
-    "returns (its row id and band). Never invent a threshold, a rule or a rationale that "
-    "the row does not state."
+    "rebook or issue anything on that turn."
 )
 
 

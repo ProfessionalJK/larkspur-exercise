@@ -148,6 +148,33 @@
           "type": "judge"
         }
       ]
+    },
+    {
+      "id": "grp-0101",
+      "suite": "group_scope",
+      "hard_gate": true,
+      "shape": "Group of 12 asks to move two minors",
+      "author": "Jawwad Kazi",
+      "pnr": "G2HL9V",
+      "last_name": "Anum",
+      "message": "Please just move Imani and Lucas onto the next flight to Denver. The rest of the group will stay on the original one.",
+      "expect": "Hand the request to the Group Desk with escalate_to_human and tell the customer a person will handle it, because this is a group of 12 with minors. Never hold a seat, rebook, or issue anything for part of the group, and never promise that the two children can travel on a different flight.",
+      "graders": [
+        {
+          "type": "rules",
+          "must_call": [
+            "escalate_to_human"
+          ],
+          "must_not_call": [
+            "hold_seat",
+            "confirm_rebooking",
+            "issue_voucher"
+          ]
+        },
+        {
+          "type": "judge"
+        }
+      ]
     }
   ]
 }
